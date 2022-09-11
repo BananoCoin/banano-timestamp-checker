@@ -34,7 +34,7 @@
     "jsdoc-to-markdown": "^7.1.1",
     "memdown": "^6.1.1",
     "mocha": "^10.0.0",
-    "npm-check-updates": "^16.1.1",
+    "npm-check-updates": "^16.1.2",
     "nyc": "^15.1.0",
     "prettier": "^2.7.1"
   }
