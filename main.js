@@ -33,9 +33,9 @@ const run = async () => {
 
   const timestampByHashMap = new Map();
 
-  if (VERBOSE) {
+  // if (VERBOSE) {
     console.log('timestampLines.length', timestampLines.length);
-  }
+  // }
 
   for (const timestampLine of timestampLines) {
     if (timestampLine.length !== 0) {
@@ -49,7 +49,12 @@ const run = async () => {
   let stillZeroCount = 0;
   let newTimestampLines = '';
 
+  let progress = 0;
   for (const [hash, timestamp0] of timestampByHashMap) {
+    if((progress % 10000) == 0) {
+      console.log('progress', progress, 'of', timestampLines.length);
+    }
+    progress++;
     let timestamp = timestamp0;
     if (timestamp == '0') {
       if (VERBOSE) {
