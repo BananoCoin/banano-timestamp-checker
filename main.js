@@ -62,11 +62,17 @@ const run = async () => {
       };
       const blockInfoResp = await httpsRateLimit.sendRequest(blockInfoReq);
       const blockInfo = blockInfoResp.blocks[hash];
-      const successor = blockInfo.successor;
-      const previous = blockInfo.contents.previous;
+      let successor = ZEROS;
+      let previous = ZEROS;
       let link = ZEROS;
       if (blockInfo.subtype == 'receive') {
         link = blockInfo.contents.link;
+      }
+      if (blockInfo.successor !== undefined) {
+        successor = blockInfo.successor;
+      }
+      if (blockInfo.contents.previous !== undefined) {
+        previous = blockInfo.contents.previous;
       }
       if (VERBOSE) {
         console.log('blockInfo.subtype', blockInfo.subtype);
@@ -101,7 +107,7 @@ const run = async () => {
         }
       }
       // if (VERBOSE) {
-      //   console.log('boundingHashes', boundingHashes);
+      // console.log('boundingHashes', boundingHashes);
       // }
       const boundsBlockInfoReq = {
         action: 'blocks_info',
@@ -109,6 +115,7 @@ const run = async () => {
         hashes: boundingHashes,
       };
       const boundsBlockInfoResp = await httpsRateLimit.sendRequest(boundsBlockInfoReq);
+      // console.log('boundsBlockInfoResp', boundsBlockInfoResp);
       let newTimestampDebugLines = '';
       for (const boundingHash of boundingHashes) {
         const boundingBlockInfo = boundsBlockInfoResp.blocks[boundingHash];
