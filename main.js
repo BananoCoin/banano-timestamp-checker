@@ -65,7 +65,19 @@ const run = async () => {
   console.log('timestampLines.length', timestampLines.length);
   // }
 
-  let newTimestampLines = '';
+  const clearLines = () => {
+    const outFilePtr = fs.openSync(outFileNm, 'w');
+    fs.closeSync(outFilePtr);
+  }
+
+  const appendLine = (line) => {
+    const outFilePtr = fs.openSync(outFileNm, 'a');
+    fs.writeSync(outFilePtr, line);
+    fs.writeSync(outFilePtr, '\n');
+    fs.closeSync(outFilePtr);
+  }
+
+  clearLines();
 
   for (const timestampLine of timestampLines) {
     if (timestampLine.length !== 0) {
@@ -81,8 +93,7 @@ const run = async () => {
           console.log('newTimestampLine', newTimestampLine);
         }
 
-        newTimestampLines += newTimestampLine;
-        newTimestampLines += '\n';
+        appendLine(newTimestampLine);
       }
     }
   }
@@ -194,7 +205,7 @@ const run = async () => {
 
     if (timestamp == '0') {
       stillZeroCount++;
-      newTimestampLines += newTimestampDebugLines;
+      appendLine(newTimestampDebugLines);
     }
 
     const newTimestampLine = `${hash},${timestamp},n${new Date(timestamp*1000).toISOString()}`;
@@ -202,15 +213,10 @@ const run = async () => {
       console.log('newTimestampLine', newTimestampLine);
     }
 
-    newTimestampLines += newTimestampLine;
-    newTimestampLines += '\n';
+    appendLine(newTimestampLine);
   }
 
   console.log('count of hashes with zero timestamp', stillZeroCount);
-
-  const outFilePtr = fs.openSync(outFileNm, 'w');
-  fs.writeSync(outFilePtr, newTimestampLines);
-  fs.closeSync(outFilePtr);
 };
 
 const runOrError = async () => {
