@@ -3,7 +3,7 @@ const fs = require('fs');
 
 const httpsRateLimit = require('https-rate-limit');
 
-const DEBUG =true;
+const DEBUG = false;
 const VERBOSE = false;
 
 const ZEROS = '0000000000000000000000000000000000000000000000000000000000000000';
