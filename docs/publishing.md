@@ -12,6 +12,6 @@
     git pull;
     git push;
     git push --tags;
-    npm publish --access public;
-    
+#    npm publish --access public;
+
 ### update version in package-lock.json and run unit tests.
