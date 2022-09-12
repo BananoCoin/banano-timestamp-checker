@@ -29,7 +29,7 @@
   "preferGlobal": true,
   "devDependencies": {
     "chai": "^4.3.6",
-    "eslint": "^8.23.0",
+    "eslint": "^8.23.1",
     "eslint-config-google": "^0.14.0",
     "jsdoc-to-markdown": "^7.1.1",
     "memdown": "^6.1.1",

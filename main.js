@@ -1,5 +1,6 @@
 'use strict';
 const fs = require('fs');
+const path = require('path');
 
 const httpsRateLimit = require('https-rate-limit');
 
@@ -31,13 +32,40 @@ const run = async () => {
     timestampLines.length = 10;
   }
 
-  const timestampCacheByHashMap = new Map();
+  const timestampCacheByHashMap = {};
+  timestampCacheByHashMap.set = (hash, timestamp) => {
+    if (!fs.existsSync('data')) {
+      fs.mkdirSync('data', {recursive: true});
+    }
+    const fileNm = path.join('data', hash);
+    const filePtr = fs.openSync(fileNm, 'w');
+    fs.writeSync(filePtr, timestamp);
+    fs.closeSync(filePtr);
+  };
+  timestampCacheByHashMap.size = () => {
+    if (fs.existsSync('data')) {
+      return fs.readdirSync('data').length;
+    }
+    return 0;
+  };
+  timestampCacheByHashMap.has = (hash) => {
+    const fileNm = path.join('data', hash);
+    return fs.existsSync(fileNm);
+  };
+  timestampCacheByHashMap.get = (hash) => {
+    const fileNm = path.join('data', hash);
+    if (fs.existsSync(fileNm)) {
+      return fs.readFileSync(fileNm, {encoding: 'UTF-8'});
+    }
+  };
 
   const zeroTimestampHashSet = new Set();
 
   // if (VERBOSE) {
   console.log('timestampLines.length', timestampLines.length);
   // }
+
+  let newTimestampLines = '';
 
   for (const timestampLine of timestampLines) {
     if (timestampLine.length !== 0) {
@@ -48,23 +76,20 @@ const run = async () => {
         zeroTimestampHashSet.add(hash);
       } else {
         timestampCacheByHashMap.set(hash, timestamp);
+        const newTimestampLine = `${hash},${timestamp},o${new Date(timestamp*1000).toISOString()}`;
+        if (VERBOSE) {
+          console.log('newTimestampLine', newTimestampLine);
+        }
+
+        newTimestampLines += newTimestampLine;
+        newTimestampLines += '\n';
       }
     }
   }
-  console.log('timestampCacheByHashMap.size', timestampCacheByHashMap.size);
+  console.log('timestampCacheByHashMap.size', timestampCacheByHashMap.size());
   console.log('zeroTimestampHashSet.size', zeroTimestampHashSet.size);
 
   let stillZeroCount = 0;
-  let newTimestampLines = '';
-  for (const [hash, timestamp] of timestampCacheByHashMap) {
-    const newTimestampLine = `${hash},${timestamp}`;
-    if (VERBOSE) {
-      console.log('newTimestampLine', newTimestampLine);
-    }
-
-    newTimestampLines += newTimestampLine;
-    newTimestampLines += '\n';
-  }
 
   let progress = 0;
   for (const hash of zeroTimestampHashSet) {
@@ -72,7 +97,6 @@ const run = async () => {
       console.log('progress', progress, 'of', timestampLines.length);
     }
     progress++;
-    let timestamp = 0;
     if (VERBOSE) {
       console.log('hash', hash);
     }
@@ -140,10 +164,16 @@ const run = async () => {
     for (const boundingHash of boundingHashes) {
       const boundingBlockInfo = boundsBlockInfoResp.blocks[boundingHash];
       if (boundingBlockInfo !== undefined) {
-        newTimestampSum += BigInt(boundingBlockInfo.local_timestamp);
-        newTimestampCount++;
+        const newTimestamp = BigInt(boundingBlockInfo.local_timestamp);
+        // if (VERBOSE) {
+        // }
+        if (newTimestamp != BigInt(0)) {
+          // console.log('boundingHash', boundingHash, 'newTimestamp', newTimestamp, 'date', new Date(parseInt(boundingBlockInfo.local_timestamp, 10)*1000).toISOString());
+          newTimestampSum += newTimestamp;
+          newTimestampCount++;
+        }
 
-        const newTimestampDebugLine = `${boundingHash},${boundingBlockInfo.local_timestamp}\n`;
+        const newTimestampDebugLine = `${boundingHash},${boundingBlockInfo.local_timestamp},d${new Date(parseInt(boundingBlockInfo.local_timestamp, 10)*1000).toISOString()}\n`;
 
         if (VERBOSE) {
           console.log('newTimestampDebugLine', newTimestampDebugLine);
@@ -152,15 +182,22 @@ const run = async () => {
         newTimestampDebugLines += newTimestampDebugLine;
       }
     }
-    timestamp = newTimestampSum / newTimestampCount;
-    timestamp = timestamp.toString();
+
+    let timestamp = '0';
+    if (newTimestampCount > 0) {
+      timestamp = newTimestampSum / newTimestampCount;
+      timestamp = timestamp.toString();
+      // if (VERBOSE) {
+      // console.log('newTimestampCount', newTimestampCount, 'newTimestampSum', newTimestampSum, 'timestamp', timestamp, 'date', new Date(timestamp*1000).toISOString());
+      // }
+    }
 
     if (timestamp == '0') {
       stillZeroCount++;
       newTimestampLines += newTimestampDebugLines;
     }
 
-    const newTimestampLine = `${hash},${timestamp}`;
+    const newTimestampLine = `${hash},${timestamp},n${new Date(timestamp*1000).toISOString()}`;
     if (VERBOSE) {
       console.log('newTimestampLine', newTimestampLine);
     }
