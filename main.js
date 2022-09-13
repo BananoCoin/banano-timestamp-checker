@@ -68,14 +68,14 @@ const run = async () => {
   const clearLines = () => {
     const outFilePtr = fs.openSync(outFileNm, 'w');
     fs.closeSync(outFilePtr);
-  }
+  };
 
   const appendLine = (line) => {
     const outFilePtr = fs.openSync(outFileNm, 'a');
     fs.writeSync(outFilePtr, line);
     fs.writeSync(outFilePtr, '\n');
     fs.closeSync(outFilePtr);
-  }
+  };
 
   clearLines();
 
@@ -121,8 +121,44 @@ const run = async () => {
 
 
     const boundingHashes = [];
-    let newTimestampSum = BigInt(0);
-    let newTimestampCount = BigInt(0);
+    let newTimestampMin;
+    let newTimestampMax;
+
+    const getMinMaxTimestamp = () => {
+      let newTimestampSum = BigInt(0);
+      let newTimestampCount = BigInt(0);
+      if (newTimestampMin != undefined) {
+        newTimestampSum += newTimestampMin;
+        newTimestampCount++;
+      }
+      if (newTimestampMax != undefined) {
+        newTimestampSum += newTimestampMax;
+        newTimestampCount++;
+      }
+      if (newTimestampCount == BigInt(0)) {
+        return '0';
+      } else {
+        const newTimestamp = newTimestampSum / newTimestampCount;
+        return newTimestamp.toString();
+      }
+    };
+
+    const setMinMaxTimestamp = (timestamp) => {
+      if (newTimestampMin == undefined) {
+        newTimestampMin = timestamp;
+      } else {
+        if (newTimestampMin > timestamp) {
+          newTimestampMin = timestamp;
+        }
+      }
+      if (newTimestampMax == undefined) {
+        newTimestampMax = timestamp;
+      } else {
+        if (newTimestampMax < timestamp) {
+          newTimestampMax = timestamp;
+        }
+      }
+    };
 
     const addIfNonZero = (hash) => {
       if (hash !== ZEROS) {
@@ -130,8 +166,7 @@ const run = async () => {
         if (timestampCacheByHashMap.has(hash)) {
           const timestamp = BigInt(timestampCacheByHashMap.get(hash));
           if (timestamp > BigInt(0)) {
-            newTimestampSum += timestamp;
-            newTimestampCount++;
+            setMinMaxTimestamp(timestamp);
             addHash = false;
           }
         }
@@ -179,9 +214,12 @@ const run = async () => {
         // if (VERBOSE) {
         // }
         if (newTimestamp != BigInt(0)) {
-          // console.log('boundingHash', boundingHash, 'newTimestamp', newTimestamp, 'date', new Date(parseInt(boundingBlockInfo.local_timestamp, 10)*1000).toISOString());
-          newTimestampSum += newTimestamp;
-          newTimestampCount++;
+          // console.log('boundingHash', boundingHash, 'newTimestamp', newTimestamp, 'date',
+          // new Date(parseInt(boundingBlockInfo.local_timestamp, 10)*1000).toISOString());
+
+          setMinMaxTimestamp(newTimestamp);
+          // newTimestampSum += newTimestamp;
+          // newTimestampCount++;
         }
 
         const newTimestampDebugLine = `${boundingHash},${boundingBlockInfo.local_timestamp},d${new Date(parseInt(boundingBlockInfo.local_timestamp, 10)*1000).toISOString()}\n`;
@@ -194,14 +232,10 @@ const run = async () => {
       }
     }
 
-    let timestamp = '0';
-    if (newTimestampCount > 0) {
-      timestamp = newTimestampSum / newTimestampCount;
-      timestamp = timestamp.toString();
-      // if (VERBOSE) {
-      // console.log('newTimestampCount', newTimestampCount, 'newTimestampSum', newTimestampSum, 'timestamp', timestamp, 'date', new Date(timestamp*1000).toISOString());
-      // }
-    }
+    const timestamp = getMinMaxTimestamp();
+    // if (VERBOSE) {
+    // console.log('newTimestampCount', newTimestampCount, 'newTimestampSum', newTimestampSum, 'timestamp', timestamp, 'date', new Date(timestamp*1000).toISOString());
+    // }
 
     if (timestamp == '0') {
       stillZeroCount++;
