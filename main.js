@@ -99,7 +99,7 @@ const run = async () => {
 
   let progress = 0;
   for (const hash of zeroTimestampHashSet) {
-    if ((progress % 10000) == 0) {
+    if (((progress % 10000) == 0) || (VERBOSE)) {
       console.log('progress', progress, 'of', timestampLines.length);
     }
     progress++;
@@ -174,8 +174,12 @@ const run = async () => {
     let successor = ZEROS;
     let previous = ZEROS;
     let link = ZEROS;
+    let source = ZEROS;
     if (blockInfo.subtype == 'receive') {
       link = blockInfo.contents.link;
+    }
+    if (blockInfo.contents.source != undefined) {
+      source = blockInfo.contents.source;
     }
     if (blockInfo.successor !== undefined) {
       successor = blockInfo.successor;
@@ -184,13 +188,17 @@ const run = async () => {
       previous = blockInfo.contents.previous;
     }
     if (VERBOSE) {
+      // console.log('blockInfo', blockInfo);
       console.log('blockInfo.subtype', blockInfo.subtype);
+      console.log('blockInfo.contents.type', blockInfo.contents.type);
+      console.log('source', source);
       console.log('successor', successor);
       console.log('previous', previous);
     }
     addIfNonZero(previous);
     addIfNonZero(successor);
     addIfNonZero(link);
+    addIfNonZero(source);
     // if (VERBOSE) {
     // console.log('boundingHashes', boundingHashes);
     // }

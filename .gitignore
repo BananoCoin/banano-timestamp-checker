@@ -8,5 +8,6 @@
 /timestamps-000.csv
 /timestamps-001.csv
 /timestamps-out.csv
+/timestamps_cantfix.csv
 /run.sh
 /merge.sh
