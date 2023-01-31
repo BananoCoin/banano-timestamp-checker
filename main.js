@@ -51,7 +51,7 @@ const run = async () => {
   const timestampCacheByHashMap = {};
   let minKey = undefined;
   let maxKey = undefined;
-  const updateRange = (key) => {
+  const updateRange = async (key) => {
     if (minKey == undefined) {
       minKey = key;
     } else {
@@ -65,6 +65,12 @@ const run = async () => {
       if (maxKey.localeCompare(key) < 0) {
         maxKey = key;
       }
+    }
+    if (await timestampCacheByHashMap.hasget('minKey') != minKey) {
+      await timestampCacheByHashMap.put('minKey', minKey, true);
+    }
+    if (await timestampCacheByHashMap.hasget('maxKey') != maxKey) {
+      await timestampCacheByHashMap.put('maxKey', maxKey, true);
     }
   };
   timestampCacheByHashMap.dbOpen = () => {
@@ -93,12 +99,11 @@ const run = async () => {
     });
   };
 
-  timestampCacheByHashMap.has = (key) => {
+  timestampCacheByHashMap.has = async (key) => {
     if (key === undefined) {
       throw new Error('key is required');
     }
     const keyStr = key.toString();
-    updateRange(keyStr);
     return new Promise((resolve, reject) => {
       try {
         db.get(keyStr, function(err, value) {
@@ -117,12 +122,11 @@ const run = async () => {
     });
   };
 
-  timestampCacheByHashMap.get = (key) => {
+  timestampCacheByHashMap.get = async (key) => {
     if (key === undefined) {
       throw new Error('key is required');
     }
     const keyStr = key.toString();
-    updateRange(keyStr);
     return new Promise((resolve, reject) => {
       try {
         db.get(keyStr, function(err, value) {
@@ -141,7 +145,7 @@ const run = async () => {
     });
   };
 
-  timestampCacheByHashMap.put = (key, value) => {
+  timestampCacheByHashMap.put = async (key, value, skipRangeUpdate) => {
     if (key === undefined) {
       throw new Error('key is required');
     }
@@ -149,7 +153,9 @@ const run = async () => {
       throw new Error('key is required');
     }
     const keyStr = key.toString();
-    updateRange(keyStr);
+    if (skipRangeUpdate != true) {
+      await updateRange(keyStr);
+    }
     const valueStr = value.toString();
     return new Promise((resolve, reject) => {
       try {
@@ -166,12 +172,12 @@ const run = async () => {
     });
   };
 
-  timestampCacheByHashMap.del = (key) => {
+  timestampCacheByHashMap.del = async (key) => {
     if (key === undefined) {
       throw new Error('key is required');
     }
     const keyStr = key.toString();
-    updateRange(keyStr);
+    await updateRange(keyStr);
     return new Promise((resolve, reject) => {
       try {
         db.del(keyStr, function(err) {
@@ -202,9 +208,20 @@ const run = async () => {
       });
     });
   };
+  timestampCacheByHashMap.hasget = async (key) => {
+    if (await timestampCacheByHashMap.has(key)) {
+      return await timestampCacheByHashMap.get(key);
+    }
+  };
 
   await timestampCacheByHashMap.dbOpen();
   console.log('timestampCacheByHashMap.size', timestampCacheByHashMap.size());
+  if (await timestampCacheByHashMap.has('minKey')) {
+    minKey = await timestampCacheByHashMap.get('minKey');
+  }
+  if (await timestampCacheByHashMap.has('maxKey')) {
+    maxKey = await timestampCacheByHashMap.get('maxKey');
+  }
 
 
   const zeroTimestampHashSet = new Set();
@@ -235,13 +252,16 @@ const run = async () => {
       // console.log('timestampLine', lineIx);
       try {
         if (Date.now() > time + 10000) {
-          console.log('timestampLine', lineIx, 'cache.size', formatBytes(await timestampCacheByHashMap.size()));
+          console.log('timestampLine', lineIx,
+              'cache.size', formatBytes(await timestampCacheByHashMap.size()),
+              'minKey', await timestampCacheByHashMap.hasget('minKey'),
+              'maxKey', await timestampCacheByHashMap.hasget('maxKey'));
           time = Date.now();
-          // await timestampCacheByHashMap.dbClose();
-          // await timestampCacheByHashMap.dbOpen();
+          await timestampCacheByHashMap.dbClose();
+          await timestampCacheByHashMap.dbOpen();
         }
         if (DEBUG) {
-          if (lineIx > 10) {
+          if (lineIx > 1000) {
             return;
           }
         }
@@ -252,7 +272,7 @@ const run = async () => {
           if (BigInt(timestamp) == BigInt(0)) {
             zeroTimestampHashSet.add(hash);
           } else {
-            await timestampCacheByHashMap.put(hash, timestamp);
+            await timestampCacheByHashMap.put(`hash:${hash}`, timestamp);
           }
         }
       } catch (error) {
@@ -262,10 +282,12 @@ const run = async () => {
       lineIx++;
     }
   };
-  fn();
-  // await timestampCacheByHashMap.dbClose();
-  // await timestampCacheByHashMap.dbOpen();
+  await fn();
+  await timestampCacheByHashMap.dbClose();
+  await timestampCacheByHashMap.dbOpen();
 
+  console.log('timestampCacheByHashMap.minKey', await timestampCacheByHashMap.hasget('minKey'));
+  console.log('timestampCacheByHashMap.maxKey', await timestampCacheByHashMap.hasget('maxKey'));
   console.log('timestampCacheByHashMap.size', formatBytes(await timestampCacheByHashMap.size()));
   console.log('zeroTimestampHashSet.size', zeroTimestampHashSet.size);
 
@@ -422,7 +444,7 @@ const run = async () => {
       await timestampCacheByHashMap.set(hash, timestamp);
     }
   }
-  // await timestampCacheByHashMap.dbClose();
+  await timestampCacheByHashMap.dbClose();
 
   console.log('count of hashes with zero timestamp', stillZeroCount);
   console.log('count of accounts with zero timestamp block', zeroTimestampAccountSet.size);
