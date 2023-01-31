@@ -1,13 +1,27 @@
 'use strict';
 const fs = require('fs');
-const path = require('path');
+const readline = require('readline');
+// const path = require('path');
 
 const httpsRateLimit = require('https-rate-limit');
+const rocksdb = require('rocksdb');
 
 const DEBUG = false;
 const VERBOSE = false;
 
 const ZEROS = '0000000000000000000000000000000000000000000000000000000000000000';
+
+const formatBytes = (bytes, decimals = 2) => {
+  if (!+bytes) return '0 Bytes';
+
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+};
 
 const run = async () => {
   console.log('banano-timestamp-checker');
@@ -25,45 +39,179 @@ const run = async () => {
 
   httpsRateLimit.setUrl(url);
 
-  const timestampsStr = fs.readFileSync(timestampFileName, {encoding: 'UTF-8'});
-  const timestampLines = timestampsStr.split('\n');
+  const fileStream = fs.createReadStream(timestampFileName);
 
-  if (DEBUG) {
-    timestampLines.length = 10;
-  }
+  const timestampLines = readline.createInterface({
+    input: fileStream,
+    crlfDelay: Infinity,
+  });
 
+
+  const db = rocksdb('data');
   const timestampCacheByHashMap = {};
-  timestampCacheByHashMap.set = (hash, timestamp) => {
-    if (!fs.existsSync('data')) {
-      fs.mkdirSync('data', {recursive: true});
+  let minKey = undefined;
+  let maxKey = undefined;
+  const updateRange = (key) => {
+    if (minKey == undefined) {
+      minKey = key;
+    } else {
+      if (minKey.localeCompare(key) > 0) {
+        minKey = key;
+      }
     }
-    const fileNm = path.join('data', hash);
-    const filePtr = fs.openSync(fileNm, 'w');
-    fs.writeSync(filePtr, timestamp);
-    fs.closeSync(filePtr);
+    if (maxKey == undefined) {
+      maxKey = key;
+    } else {
+      if (maxKey.localeCompare(key) < 0) {
+        maxKey = key;
+      }
+    }
   };
+  timestampCacheByHashMap.dbOpen = () => {
+    return new Promise((resolve, reject) => {
+      db.open((error) => {
+        /* istanbul ignore if */
+        if (error !== undefined) {
+          reject(error);
+        } else {
+          resolve();
+        }
+      });
+    });
+  };
+
+  timestampCacheByHashMap.dbClose = () => {
+    return new Promise((resolve, reject) => {
+      db.close((error) => {
+        /* istanbul ignore if */
+        if (error !== undefined) {
+          reject(error);
+        } else {
+          resolve();
+        }
+      });
+    });
+  };
+
+  timestampCacheByHashMap.has = (key) => {
+    if (key === undefined) {
+      throw new Error('key is required');
+    }
+    const keyStr = key.toString();
+    updateRange(keyStr);
+    return new Promise((resolve, reject) => {
+      try {
+        db.get(keyStr, function(err, value) {
+          /* istanbul ignore if */
+          if (err && err.code === 'LEVEL_NOT_FOUND') {
+            resolve(false);
+          } else if (value === undefined) {
+            resolve(false);
+          } else {
+            resolve(true);
+          }
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
+  };
+
+  timestampCacheByHashMap.get = (key) => {
+    if (key === undefined) {
+      throw new Error('key is required');
+    }
+    const keyStr = key.toString();
+    updateRange(keyStr);
+    return new Promise((resolve, reject) => {
+      try {
+        db.get(keyStr, function(err, value) {
+          /* istanbul ignore if */
+          if (err && err.code === 'LEVEL_NOT_FOUND') {
+            reject(Error(`code:${err.code}`));
+          } else if (value === undefined) {
+            reject(Error(`value UNDEFINED`));
+          } else {
+            resolve(value.toString());
+          }
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
+  };
+
+  timestampCacheByHashMap.put = (key, value) => {
+    if (key === undefined) {
+      throw new Error('key is required');
+    }
+    if (value === undefined) {
+      throw new Error('key is required');
+    }
+    const keyStr = key.toString();
+    updateRange(keyStr);
+    const valueStr = value.toString();
+    return new Promise((resolve, reject) => {
+      try {
+        db.put(keyStr, valueStr, function(err) {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(null);
+          }
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
+  };
+
+  timestampCacheByHashMap.del = (key) => {
+    if (key === undefined) {
+      throw new Error('key is required');
+    }
+    const keyStr = key.toString();
+    updateRange(keyStr);
+    return new Promise((resolve, reject) => {
+      try {
+        db.del(keyStr, function(err) {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(null);
+          }
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
+  };
+
   timestampCacheByHashMap.size = () => {
-    if (fs.existsSync('data')) {
-      return fs.readdirSync('data').length;
+    if ((minKey == undefined) || (maxKey == undefined)) {
+      return 0;
     }
-    return 0;
+    return new Promise((resolve, reject) => {
+      db.approximateSize(minKey, maxKey, (error, size) => {
+        /* istanbul ignore if */
+        if (error) {
+          reject(error);
+        } else {
+          resolve(size);
+        }
+      });
+    });
   };
-  timestampCacheByHashMap.has = (hash) => {
-    const fileNm = path.join('data', hash);
-    return fs.existsSync(fileNm);
-  };
-  timestampCacheByHashMap.get = (hash) => {
-    const fileNm = path.join('data', hash);
-    if (fs.existsSync(fileNm)) {
-      return fs.readFileSync(fileNm, {encoding: 'UTF-8'});
-    }
-  };
+
+  await timestampCacheByHashMap.dbOpen();
+  console.log('timestampCacheByHashMap.size', timestampCacheByHashMap.size());
+
 
   const zeroTimestampHashSet = new Set();
   const zeroTimestampAccountSet = new Set();
 
   // if (VERBOSE) {
-  console.log('timestampLines.length', timestampLines.length);
+  // console.log('timestampLines.length', timestampLines.length);
   // }
 
   const clearLines = () => {
@@ -80,19 +228,45 @@ const run = async () => {
 
   clearLines();
 
-  for (const timestampLine of timestampLines) {
-    if (timestampLine.length !== 0) {
-      const timestampData = timestampLine.split(',');
-      const hash = timestampData[0];
-      const timestamp = timestampData[1];
-      if (BigInt(timestamp) == BigInt(0)) {
-        zeroTimestampHashSet.add(hash);
-      } else {
-        timestampCacheByHashMap.set(hash, timestamp);
+  const fn = async () => {
+    let time = 0;
+    let lineIx = 0;
+    for await (const timestampLine of timestampLines) {
+      // console.log('timestampLine', lineIx);
+      try {
+        if (Date.now() > time + 10000) {
+          console.log('timestampLine', lineIx, 'cache.size', formatBytes(await timestampCacheByHashMap.size()));
+          time = Date.now();
+          // await timestampCacheByHashMap.dbClose();
+          // await timestampCacheByHashMap.dbOpen();
+        }
+        if (DEBUG) {
+          if (lineIx > 10) {
+            return;
+          }
+        }
+        if (timestampLine.length !== 0) {
+          const timestampData = timestampLine.split(',');
+          const hash = timestampData[0];
+          const timestamp = timestampData[1];
+          if (BigInt(timestamp) == BigInt(0)) {
+            zeroTimestampHashSet.add(hash);
+          } else {
+            await timestampCacheByHashMap.put(hash, timestamp);
+          }
+        }
+      } catch (error) {
+        console.log(error);
+        return;
       }
+      lineIx++;
     }
-  }
-  console.log('timestampCacheByHashMap.size', timestampCacheByHashMap.size());
+  };
+  fn();
+  // await timestampCacheByHashMap.dbClose();
+  // await timestampCacheByHashMap.dbOpen();
+
+  console.log('timestampCacheByHashMap.size', formatBytes(await timestampCacheByHashMap.size()));
   console.log('zeroTimestampHashSet.size', zeroTimestampHashSet.size);
 
   let stillZeroCount = 0;
@@ -155,11 +329,11 @@ const run = async () => {
       }
     };
 
-    const addIfNonZero = (hash) => {
+    const addIfNonZero = async (hash) => {
       if (hash !== ZEROS) {
         let addHash = true;
-        if (timestampCacheByHashMap.has(hash)) {
-          const timestamp = BigInt(timestampCacheByHashMap.get(hash));
+        if (await timestampCacheByHashMap.has(hash)) {
+          const timestamp = BigInt(await timestampCacheByHashMap.get(hash));
           if (timestamp > BigInt(0)) {
             setMinMaxTimestamp(timestamp);
             addHash = false;
@@ -195,10 +369,10 @@ const run = async () => {
       console.log('successor', successor);
       console.log('previous', previous);
     }
-    addIfNonZero(previous);
-    addIfNonZero(successor);
-    addIfNonZero(link);
-    addIfNonZero(source);
+    await addIfNonZero(previous);
+    await addIfNonZero(successor);
+    await addIfNonZero(link);
+    await addIfNonZero(source);
     // if (VERBOSE) {
     // console.log('boundingHashes', boundingHashes);
     // }
@@ -245,9 +419,10 @@ const run = async () => {
       // console.log('newTimestampLine', newTimestampLine);
       appendLine(newTimestampLine);
     } else {
-      timestampCacheByHashMap.set(hash, timestamp);
+      await timestampCacheByHashMap.set(hash, timestamp);
     }
   }
+  // await timestampCacheByHashMap.dbClose();
 
   console.log('count of hashes with zero timestamp', stillZeroCount);
   console.log('count of accounts with zero timestamp block', zeroTimestampAccountSet.size);
