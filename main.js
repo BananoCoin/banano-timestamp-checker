@@ -308,7 +308,7 @@ const run = async () => {
             await zeroTimestampUtil.add(hash);
           } else {
             const key = `{"hash":"${hash}"}`;
-            if(await rocksdbUtil.has(key)) {
+            if (await rocksdbUtil.has(key)) {
               skippedHashes++;
             } else {
               await rocksdbUtil.put(key, timestamp);
