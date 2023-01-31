@@ -23,6 +23,11 @@ const formatBytes = (bytes, decimals = 2) => {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
 };
 
+const getDate = (ts) => {
+  // console.log('getDate', ts);
+  return new Date(parseInt(ts, 10)*1000).toISOString();
+};
+
 const run = async () => {
   console.log('banano-timestamp-checker');
 
@@ -48,32 +53,30 @@ const run = async () => {
 
 
   const db = rocksdb('data');
-  const timestampCacheByHashMap = {};
-  let minKey = undefined;
-  let maxKey = undefined;
+  const rocksdbUtil = {};
+
+  const minFn = (oldValue, newValue) => {
+    return oldValue.localeCompare(newValue) > 0;
+  };
+  const maxFn = (oldValue, newValue) => {
+    return oldValue.localeCompare(newValue) < 0;
+  };
+
   const updateRange = async (key) => {
-    if (minKey == undefined) {
-      minKey = key;
+    await rocksdbUtil.putIf('minKey', key, true, minFn);
+    await rocksdbUtil.putIf('maxKey', key, true, maxFn);
+  };
+  rocksdbUtil.putIf = async (key, newValue, skipRangeUpdate, fnOldNew) => {
+    const oldValue = await rocksdbUtil.hasget(key);
+    if (oldValue == undefined) {
+      await rocksdbUtil.put(key, newValue, skipRangeUpdate);
     } else {
-      if (minKey.localeCompare(key) > 0) {
-        minKey = key;
+      if (await fnOldNew(oldValue, newValue)) {
+        await rocksdbUtil.put(key, newValue, skipRangeUpdate);
       }
-    }
-    if (maxKey == undefined) {
-      maxKey = key;
-    } else {
-      if (maxKey.localeCompare(key) < 0) {
-        maxKey = key;
-      }
-    }
-    if (await timestampCacheByHashMap.hasget('minKey') != minKey) {
-      await timestampCacheByHashMap.put('minKey', minKey, true);
-    }
-    if (await timestampCacheByHashMap.hasget('maxKey') != maxKey) {
-      await timestampCacheByHashMap.put('maxKey', maxKey, true);
     }
   };
-  timestampCacheByHashMap.dbOpen = () => {
+  rocksdbUtil.dbOpen = () => {
     return new Promise((resolve, reject) => {
       db.open((error) => {
         /* istanbul ignore if */
@@ -86,7 +89,7 @@ const run = async () => {
     });
   };
 
-  timestampCacheByHashMap.dbClose = () => {
+  rocksdbUtil.dbClose = () => {
     return new Promise((resolve, reject) => {
       db.close((error) => {
         /* istanbul ignore if */
@@ -99,7 +102,7 @@ const run = async () => {
     });
   };
 
-  timestampCacheByHashMap.has = async (key) => {
+  rocksdbUtil.has = async (key) => {
     if (key === undefined) {
       throw new Error('key is required');
     }
@@ -122,7 +125,7 @@ const run = async () => {
     });
   };
 
-  timestampCacheByHashMap.get = async (key) => {
+  rocksdbUtil.get = async (key) => {
     if (key === undefined) {
       throw new Error('key is required');
     }
@@ -145,7 +148,7 @@ const run = async () => {
     });
   };
 
-  timestampCacheByHashMap.put = async (key, value, skipRangeUpdate) => {
+  rocksdbUtil.put = async (key, value, skipRangeUpdate) => {
     if (key === undefined) {
       throw new Error('key is required');
     }
@@ -172,7 +175,7 @@ const run = async () => {
     });
   };
 
-  timestampCacheByHashMap.del = async (key) => {
+  rocksdbUtil.del = async (key) => {
     if (key === undefined) {
       throw new Error('key is required');
     }
@@ -193,7 +196,9 @@ const run = async () => {
     });
   };
 
-  timestampCacheByHashMap.size = () => {
+  rocksdbUtil.approximateSize = async (minKeyName, maxKeyName) => {
+    const minKey = await rocksdbUtil.hasget(minKeyName);
+    const maxKey = await rocksdbUtil.hasget(maxKeyName);
     if ((minKey == undefined) || (maxKey == undefined)) {
       return 0;
     }
@@ -208,23 +213,48 @@ const run = async () => {
       });
     });
   };
-  timestampCacheByHashMap.hasget = async (key) => {
-    if (await timestampCacheByHashMap.has(key)) {
-      return await timestampCacheByHashMap.get(key);
+  rocksdbUtil.size = async () => {
+    return await rocksdbUtil.approximateSize('minKey', 'maxKey');
+  };
+  rocksdbUtil.hasget = async (key) => {
+    if (await rocksdbUtil.has(key)) {
+      return await rocksdbUtil.get(key);
     }
   };
+  rocksdbUtil.iterator = async (minKeyName, maxKeyName) => {
+    const minKey = await rocksdbUtil.hasget(minKeyName);
+    const maxKey = await rocksdbUtil.hasget(maxKeyName);
+    console.log('iterator', 'minKeyName', minKeyName, 'maxKeyName', maxKeyName);
+    if ((minKey == undefined) || (maxKey == undefined)) {
+      console.log('iterator', 'minKey', minKey, 'maxKey', maxKey);
+      return new Map().entries();
+    }
+    const options = {
+      gt: minKey,
+      lt: maxKey,
+      keyAsBuffer: false,
+      valueAsBuffer: false,
+    };
+    const it = db.iterator(options);
+    return it;
+  };
 
-  await timestampCacheByHashMap.dbOpen();
-  console.log('timestampCacheByHashMap.size', timestampCacheByHashMap.size());
-  if (await timestampCacheByHashMap.has('minKey')) {
-    minKey = await timestampCacheByHashMap.get('minKey');
-  }
-  if (await timestampCacheByHashMap.has('maxKey')) {
-    maxKey = await timestampCacheByHashMap.get('maxKey');
-  }
+  await rocksdbUtil.dbOpen();
 
+  const zeroTimestampUtil = {};
+  zeroTimestampUtil.add = async (hash) => {
+    const key = `{"zero":"${hash}"}`;
+    await rocksdbUtil.put(key, '');
+    await rocksdbUtil.putIf('minZeroKey', key, true, minFn);
+    await rocksdbUtil.putIf('maxZeroKey', key, true, maxFn);
+  };
+  zeroTimestampUtil.size = async () => {
+    return await rocksdbUtil.approximateSize('minZeroKey', 'maxZeroKey');
+  };
+  zeroTimestampUtil.iterator = async () => {
+    return await rocksdbUtil.iterator('minZeroKey', 'maxZeroKey');
+  };
 
-  const zeroTimestampHashSet = new Set();
   const zeroTimestampAccountSet = new Set();
 
   // if (VERBOSE) {
@@ -245,23 +275,27 @@ const run = async () => {
 
   clearLines();
 
+  let skippedHashes = 0;
   const fn = async () => {
     let time = 0;
     let lineIx = 0;
+    let logCount = 0;
     for await (const timestampLine of timestampLines) {
       // console.log('timestampLine', lineIx);
       try {
         if (Date.now() > time + 10000) {
+          logCount++;
           console.log('timestampLine', lineIx,
-              'cache.size', formatBytes(await timestampCacheByHashMap.size()),
-              'minKey', await timestampCacheByHashMap.hasget('minKey'),
-              'maxKey', await timestampCacheByHashMap.hasget('maxKey'));
+              'zeros.size', await zeroTimestampUtil.size(),
+              'cache.size', formatBytes(await rocksdbUtil.size()),
+              'minKey', await rocksdbUtil.hasget('minKey'),
+              'maxKey', await rocksdbUtil.hasget('maxKey'));
           time = Date.now();
-          await timestampCacheByHashMap.dbClose();
-          await timestampCacheByHashMap.dbOpen();
+          await rocksdbUtil.dbClose();
+          await rocksdbUtil.dbOpen();
         }
         if (DEBUG) {
-          if (lineIx > 1000) {
+          if (logCount > 2) {
             return;
           }
         }
@@ -269,10 +303,16 @@ const run = async () => {
           const timestampData = timestampLine.split(',');
           const hash = timestampData[0];
           const timestamp = timestampData[1];
-          if (BigInt(timestamp) == BigInt(0)) {
-            zeroTimestampHashSet.add(hash);
+          const date = getDate(timestamp);
+          if ((BigInt(timestamp) == BigInt(0)) || date.startsWith('2023-')) {
+            await zeroTimestampUtil.add(hash);
           } else {
-            await timestampCacheByHashMap.put(`hash:${hash}`, timestamp);
+            const key = `{"hash":"${hash}"}`;
+            if(await rocksdbUtil.has(key)) {
+              skippedHashes++;
+            } else {
+              await rocksdbUtil.put(key, timestamp);
+            }
           }
         }
       } catch (error) {
@@ -283,168 +323,189 @@ const run = async () => {
     }
   };
   await fn();
-  await timestampCacheByHashMap.dbClose();
-  await timestampCacheByHashMap.dbOpen();
+  await rocksdbUtil.dbClose();
+  await rocksdbUtil.dbOpen();
 
-  console.log('timestampCacheByHashMap.minKey', await timestampCacheByHashMap.hasget('minKey'));
-  console.log('timestampCacheByHashMap.maxKey', await timestampCacheByHashMap.hasget('maxKey'));
-  console.log('timestampCacheByHashMap.size', formatBytes(await timestampCacheByHashMap.size()));
-  console.log('zeroTimestampHashSet.size', zeroTimestampHashSet.size);
+  console.log('skippedHashes', skippedHashes);
+  console.log('rocksdbUtil.minKey', await rocksdbUtil.hasget('minKey'));
+  console.log('rocksdbUtil.maxKey', await rocksdbUtil.hasget('maxKey'));
+  console.log('rocksdbUtil.size', formatBytes(await rocksdbUtil.size()));
+  console.log('zeroTimestampUtil.size', await zeroTimestampUtil.size());
 
   let stillZeroCount = 0;
 
+  let time = 0;
   let progress = 0;
-  for (const hash of zeroTimestampHashSet) {
-    if (((progress % 10000) == 0) || (VERBOSE)) {
-      console.log('progress', progress, 'of', timestampLines.length);
+  const zeroTimestampUtilIterator = await zeroTimestampUtil.iterator();
+  // console.log('zeroTimestampUtilIterator', zeroTimestampUtilIterator);
+  const hashes = [];
+  for await (const [keyStr] of zeroTimestampUtilIterator) {
+    rocksdbUtil.del(keyStr);
+    if (VERBOSE) {
+      console.log('keyStr', keyStr);
     }
-    progress++;
+    const keyObj = JSON.parse(keyStr);
+    const hash = keyObj.zero;
+
     if (VERBOSE) {
       console.log('hash', hash);
     }
-    const blockInfoReq = {
-      action: 'blocks_info',
-      json_block: true,
-      hashes: [hash],
-    };
-    const blockInfoResp = await httpsRateLimit.sendRequest(blockInfoReq);
-    const blockInfo = blockInfoResp.blocks[hash];
-    zeroTimestampAccountSet.add(blockInfo.block_account);
-
-    const boundingHashes = [];
-    let newTimestampMin;
-    let newTimestampMax;
-
-    const getMinMaxTimestamp = () => {
-      let newTimestampSum = BigInt(0);
-      let newTimestampCount = BigInt(0);
-      if (newTimestampMin != undefined) {
-        newTimestampSum += newTimestampMin;
-        newTimestampCount++;
-      }
-      if (newTimestampMax != undefined) {
-        newTimestampSum += newTimestampMax;
-        newTimestampCount++;
-      }
-      if (newTimestampCount == BigInt(0)) {
-        return '0';
-      } else {
-        const newTimestamp = newTimestampSum / newTimestampCount;
-        return newTimestamp.toString();
-      }
-    };
-
-    const setMinMaxTimestamp = (timestamp) => {
-      if (newTimestampMin == undefined) {
-        newTimestampMin = timestamp;
-      } else {
-        if (newTimestampMin > timestamp) {
-          newTimestampMin = timestamp;
+    if (hashes.length < 1000) {
+      hashes.push(hash);
+    } else {
+      const blockInfoReq = {
+        action: 'blocks_info',
+        json_block: true,
+        hashes: hashes,
+      };
+      const blockInfoResp = await httpsRateLimit.sendRequest(blockInfoReq);
+      for (const hash of hashes) {
+        if ((Date.now() > time + 10000) || (VERBOSE)) {
+          console.log('progress', progress, 'of', await zeroTimestampUtil.size());
+          time = Date.now();
         }
-      }
-      if (newTimestampMax == undefined) {
-        newTimestampMax = timestamp;
-      } else {
-        if (newTimestampMax < timestamp) {
-          newTimestampMax = timestamp;
-        }
-      }
-    };
+        progress++;
+        const blockInfo = blockInfoResp.blocks[hash];
+        zeroTimestampAccountSet.add(blockInfo.block_account);
 
-    const addIfNonZero = async (hash) => {
-      if (hash !== ZEROS) {
-        let addHash = true;
-        if (await timestampCacheByHashMap.has(hash)) {
-          const timestamp = BigInt(await timestampCacheByHashMap.get(hash));
-          if (timestamp > BigInt(0)) {
-            setMinMaxTimestamp(timestamp);
-            addHash = false;
+
+        const boundingHashes = [];
+        let newTimestampMin;
+        let newTimestampMax;
+
+        const getMinMaxTimestamp = () => {
+          let newTimestampSum = BigInt(0);
+          let newTimestampCount = BigInt(0);
+          if (newTimestampMin != undefined) {
+            newTimestampSum += newTimestampMin;
+            newTimestampCount++;
+          }
+          if (newTimestampMax != undefined) {
+            newTimestampSum += newTimestampMax;
+            newTimestampCount++;
+          }
+          if (newTimestampCount == BigInt(0)) {
+            return '0';
+          } else {
+            const newTimestamp = newTimestampSum / newTimestampCount;
+            return newTimestamp.toString();
+          }
+        };
+
+        const setMinMaxTimestamp = (timestamp) => {
+          if (newTimestampMin == undefined) {
+            newTimestampMin = timestamp;
+          } else {
+            if (newTimestampMin > timestamp) {
+              newTimestampMin = timestamp;
+            }
+          }
+          if (newTimestampMax == undefined) {
+            newTimestampMax = timestamp;
+          } else {
+            if (newTimestampMax < timestamp) {
+              newTimestampMax = timestamp;
+            }
+          }
+        };
+
+        const addIfNonZero = async (hash) => {
+          if (hash !== ZEROS) {
+            let addHash = true;
+            if (await rocksdbUtil.has(hash)) {
+              const timestamp = BigInt(await rocksdbUtil.get(hash));
+              if (timestamp > BigInt(0)) {
+                setMinMaxTimestamp(timestamp);
+                addHash = false;
+              }
+            }
+            if (addHash) {
+              boundingHashes.push(hash);
+            }
+          }
+        };
+
+        let successor = ZEROS;
+        let previous = ZEROS;
+        let link = ZEROS;
+        let source = ZEROS;
+        if (blockInfo.subtype == 'receive') {
+          link = blockInfo.contents.link;
+        }
+        if (blockInfo.contents.source != undefined) {
+          source = blockInfo.contents.source;
+        }
+        if (blockInfo.successor !== undefined) {
+          successor = blockInfo.successor;
+        }
+        if (blockInfo.contents.previous !== undefined) {
+          previous = blockInfo.contents.previous;
+        }
+        if (VERBOSE) {
+          // console.log('blockInfo', blockInfo);
+          console.log('blockInfo.subtype', blockInfo.subtype);
+          console.log('blockInfo.contents.type', blockInfo.contents.type);
+          console.log('source', source);
+          console.log('successor', successor);
+          console.log('previous', previous);
+        }
+        await addIfNonZero(previous);
+        await addIfNonZero(successor);
+        await addIfNonZero(link);
+        await addIfNonZero(source);
+        // if (VERBOSE) {
+        // console.log('boundingHashes', boundingHashes);
+        // }
+        const boundsBlockInfoReq = {
+          action: 'blocks_info',
+          json_block: true,
+          hashes: boundingHashes,
+        };
+        const boundsBlockInfoResp = await httpsRateLimit.sendRequest(boundsBlockInfoReq);
+        // console.log('boundsBlockInfoResp', boundsBlockInfoResp);
+        // const newTimestampDebugLines = '';
+        for (const boundingHash of boundingHashes) {
+          const boundingBlockInfo = boundsBlockInfoResp.blocks[boundingHash];
+          if (boundingBlockInfo !== undefined) {
+            zeroTimestampAccountSet.add(boundingBlockInfo.block_account);
+            const newTimestamp = BigInt(boundingBlockInfo.local_timestamp);
+            // if (VERBOSE) {
+            // }
+            if (newTimestamp != BigInt(0)) {
+              // console.log('boundingHash', boundingHash, 'newTimestamp', newTimestamp, 'date',
+              // new Date(parseInt(boundingBlockInfo.local_timestamp, 10)*1000).toISOString());
+
+              setMinMaxTimestamp(newTimestamp);
+              // newTimestampSum += newTimestamp;
+              // newTimestampCount++;
+            } else {
+              const boundingTimestampLine = `${boundingHash},${newTimestamp.toString()}`;
+              appendLine(boundingTimestampLine);
+            }
           }
         }
-        if (addHash) {
-          boundingHashes.push(hash);
+
+        const timestamp = getMinMaxTimestamp();
+        if (timestamp == '0') {
+          stillZeroCount++;
         }
-      }
-    };
 
-    let successor = ZEROS;
-    let previous = ZEROS;
-    let link = ZEROS;
-    let source = ZEROS;
-    if (blockInfo.subtype == 'receive') {
-      link = blockInfo.contents.link;
-    }
-    if (blockInfo.contents.source != undefined) {
-      source = blockInfo.contents.source;
-    }
-    if (blockInfo.successor !== undefined) {
-      successor = blockInfo.successor;
-    }
-    if (blockInfo.contents.previous !== undefined) {
-      previous = blockInfo.contents.previous;
-    }
-    if (VERBOSE) {
-      // console.log('blockInfo', blockInfo);
-      console.log('blockInfo.subtype', blockInfo.subtype);
-      console.log('blockInfo.contents.type', blockInfo.contents.type);
-      console.log('source', source);
-      console.log('successor', successor);
-      console.log('previous', previous);
-    }
-    await addIfNonZero(previous);
-    await addIfNonZero(successor);
-    await addIfNonZero(link);
-    await addIfNonZero(source);
-    // if (VERBOSE) {
-    // console.log('boundingHashes', boundingHashes);
-    // }
-    const boundsBlockInfoReq = {
-      action: 'blocks_info',
-      json_block: true,
-      hashes: boundingHashes,
-    };
-    const boundsBlockInfoResp = await httpsRateLimit.sendRequest(boundsBlockInfoReq);
-    // console.log('boundsBlockInfoResp', boundsBlockInfoResp);
-    // const newTimestampDebugLines = '';
-    for (const boundingHash of boundingHashes) {
-      const boundingBlockInfo = boundsBlockInfoResp.blocks[boundingHash];
-      if (boundingBlockInfo !== undefined) {
-        zeroTimestampAccountSet.add(boundingBlockInfo.block_account);
-        const newTimestamp = BigInt(boundingBlockInfo.local_timestamp);
-        // if (VERBOSE) {
-        // }
-        if (newTimestamp != BigInt(0)) {
-          // console.log('boundingHash', boundingHash, 'newTimestamp', newTimestamp, 'date',
-          // new Date(parseInt(boundingBlockInfo.local_timestamp, 10)*1000).toISOString());
+        const newTimestampLine = `${hash},${timestamp}`;
+        if (VERBOSE) {
+          console.log('newTimestampLine', newTimestampLine);
+        }
 
-          setMinMaxTimestamp(newTimestamp);
-          // newTimestampSum += newTimestamp;
-          // newTimestampCount++;
+        if (timestamp == '0') {
+          // console.log('newTimestampLine', newTimestampLine);
+          appendLine(newTimestampLine);
         } else {
-          const boundingTimestampLine = `${boundingHash},${newTimestamp.toString()}`;
-          appendLine(boundingTimestampLine);
+          await rocksdbUtil.put(`{"hash":"${hash}"}`, timestamp);
         }
       }
-    }
-
-    const timestamp = getMinMaxTimestamp();
-    if (timestamp == '0') {
-      stillZeroCount++;
-    }
-
-    const newTimestampLine = `${hash},${timestamp}`;
-    if (VERBOSE) {
-      console.log('newTimestampLine', newTimestampLine);
-    }
-
-    if (timestamp == '0') {
-      // console.log('newTimestampLine', newTimestampLine);
-      appendLine(newTimestampLine);
-    } else {
-      await timestampCacheByHashMap.set(hash, timestamp);
+      hashes.length = 0;
     }
   }
-  await timestampCacheByHashMap.dbClose();
+  await rocksdbUtil.dbClose();
 
   console.log('count of hashes with zero timestamp', stillZeroCount);
   console.log('count of accounts with zero timestamp block', zeroTimestampAccountSet.size);

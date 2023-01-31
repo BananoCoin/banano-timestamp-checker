@@ -14,7 +14,7 @@
     "eslint": "eslint --fix '**/*.js'",
     "merge": "node -max-old-space-size=5700 merge.js",
     "npm-check-updates": "npm-check-updates --target minor -u",
-    "preflight": "npm run touch && npm update && npm run npm-check-updates && npm i && npm audit fix && npm run eslint && npm run prettier && npm run coverage && npm run docs && npm outdated && echo 'preflight passed'",
+    "preflight": "npm update && npm run npm-check-updates && npm i && npm audit fix && npm run eslint && npm run prettier && npm run coverage && npm run docs && npm outdated && echo 'preflight passed'",
     "prettier": "prettier \"**/**.{ts,json,css,scss,html}\" --write",
     "touch": "find . -exec touch {} \\;",
     "test": "./node_modules/mocha/bin/mocha.js --recursive -t 100000 test/unit",
