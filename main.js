@@ -285,11 +285,18 @@ const run = async () => {
       try {
         if (Date.now() > time + 10000) {
           logCount++;
-          console.log('timestampLine', lineIx,
-              'zeros.size', formatBytes(await zeroTimestampUtil.size()),
-              'cache.size', formatBytes(await rocksdbUtil.size()),
-              'minKey', await rocksdbUtil.hasget('minKey'),
-              'maxKey', await rocksdbUtil.hasget('maxKey'));
+          console.log('timestampLine'
+              ,
+              lineIx
+              ,
+              'zeros.size', formatBytes(await zeroTimestampUtil.size())
+              ,
+              'cache.size', formatBytes(await rocksdbUtil.size())
+              ,
+              'minKey', await rocksdbUtil.hasget('minKey')
+              ,
+              'maxKey', await rocksdbUtil.hasget('maxKey'))
+          ;
           time = Date.now();
           await rocksdbUtil.dbClose();
           await rocksdbUtil.dbOpen();
