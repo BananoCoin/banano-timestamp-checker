@@ -291,12 +291,12 @@ const run = async () => {
               ,
               'zeros.size', formatBytes(await zeroTimestampUtil.size())
               ,
-              'cache.size', formatBytes(await rocksdbUtil.size())
-              ,
-              'minKey', await rocksdbUtil.hasget('minKey')
-              ,
-              'maxKey', await rocksdbUtil.hasget('maxKey'))
-          ;
+              'cache.size', formatBytes(await rocksdbUtil.size()),
+              // ,
+              // 'minKey', await rocksdbUtil.hasget('minKey')
+              // ,
+              // 'maxKey', await rocksdbUtil.hasget('maxKey')
+          );
           time = Date.now();
           await rocksdbUtil.dbClose();
           await rocksdbUtil.dbOpen();
