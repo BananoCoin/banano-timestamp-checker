@@ -2,7 +2,7 @@
 const fs = require('fs');
 const readline = require('readline');
 
-const DEBUG = true;
+const DEBUG = false;
 
 const getDate = (ts) => {
   // console.log('getDate', ts);
@@ -10,6 +10,7 @@ const getDate = (ts) => {
 };
 
 const formatBytes = (bytes, decimals = 2) => {
+  bytes = Number(bytes);
   if (!+bytes) return '0 Bytes';
 
   const k = 1024;
@@ -124,7 +125,7 @@ const run = async () => {
   await processStream(atAndAfterFileName, atAndAfterFn);
 
 
-  console.log(fileNm, new Date(Date.now()).toISOString(),
+  console.log('totals', new Date(Date.now()).toISOString(),
       'total', totalLineCount, 'totalBytes', formatBytes(totalByteCount));
 
   outStream.end();
