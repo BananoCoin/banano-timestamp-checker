@@ -2,11 +2,23 @@
 const fs = require('fs');
 const readline = require('readline');
 
-const DEBUG = false;
+const DEBUG = true;
 
 const getDate = (ts) => {
   // console.log('getDate', ts);
   return new Date(parseInt(ts, 10)*1000).toISOString().substring(0, 10);
+};
+
+const formatBytes = (bytes, decimals = 2) => {
+  if (!+bytes) return '0 Bytes';
+
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
 };
 
 const run = async () => {
@@ -44,11 +56,16 @@ const run = async () => {
     return flag;
   };
 
+  let totalLineCount = 0n;
+  let totalByteCount = 0n;
+
   const processStream = async (fileNm, timestampFn) => {
     let time = 0;
     let lineIx = 0n;
     let skippedLineCount = 0n;
     let writtenLineCount = 0n;
+    let skippedByteCount = 0n;
+    let writtenByteCount = 0n;
     let logCount = 0;
     const stream = fs.createReadStream(fileNm);
     const lines = readline.createInterface({
@@ -61,7 +78,9 @@ const run = async () => {
       try {
         if (Date.now() > time + 10000) {
           logCount++;
-          console.log(fileNm, new Date(Date.now()).toISOString(), lineIx, 'skipped', skippedLineCount, 'written', writtenLineCount);
+          console.log(fileNm, new Date(Date.now()).toISOString(), lineIx,
+              'skipped', skippedLineCount, 'written', writtenLineCount,
+              'skippedBytes', formatBytes(skippedByteCount), 'writtenBytes', formatBytes(writtenByteCount));
           time = Date.now();
         }
         if (DEBUG) {
@@ -73,14 +92,22 @@ const run = async () => {
           const timestampData = line.split(',');
           const hash = timestampData[0];
           const timestamp = timestampData[1];
+          const byteCount = BigInt(2 + hash.length + timestamp.length);
+
           if (timestampFn(timestamp)) {
             outStream.write(hash);
             outStream.write(',');
             outStream.write(timestamp);
             outStream.write('\n');
+
+            totalLineCount++;
             writtenLineCount++;
+
+            totalByteCount += byteCount;
+            writtenByteCount += byteCount;
           } else {
             skippedLineCount++;
+            skippedByteCount += byteCount;
           }
         }
       } catch (error) {
@@ -89,9 +116,16 @@ const run = async () => {
       }
       lineIx++;
     }
+    console.log(fileNm, new Date(Date.now()).toISOString(), lineIx,
+        'skipped', skippedLineCount, 'written', writtenLineCount,
+        'skippedBytes', formatBytes(skippedByteCount), 'writtenBytes', formatBytes(writtenByteCount));
   };
   await processStream(beforeFileName, beforeFn);
   await processStream(atAndAfterFileName, atAndAfterFn);
+
+
+  console.log(fileNm, new Date(Date.now()).toISOString(),
+      'total', totalLineCount, 'totalBytes', formatBytes(totalByteCount));
 
   outStream.end();
 };

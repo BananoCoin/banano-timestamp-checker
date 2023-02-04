@@ -38,7 +38,7 @@ testModuleRef.request = (options, response) => {
 };
 
 describe('index', () => {
-  it('sendRequest', async () => {
+  it('sendRequest', () => {
     try {
       httpsRateLimit.setUrl('https://localhost');
       httpsRateLimit.setUrl('http://localhost');

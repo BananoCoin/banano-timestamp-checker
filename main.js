@@ -102,7 +102,7 @@ const run = async () => {
     });
   };
 
-  rocksdbUtil.has = async (key) => {
+  rocksdbUtil.has = (key) => {
     if (key === undefined) {
       throw new Error('key is required');
     }
@@ -125,7 +125,7 @@ const run = async () => {
     });
   };
 
-  rocksdbUtil.get = async (key) => {
+  rocksdbUtil.get = (key) => {
     if (key === undefined) {
       throw new Error('key is required');
     }
