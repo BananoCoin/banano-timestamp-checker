@@ -1,7 +1,7 @@
 {
   "name": "banano-timestamp-checker",
   "version": "1.0.30",
-  "description": "banano distribution stats",
+  "description": "banano timestamp checker",
   "author": "Coranos",
   "license": "MIT",
   "repository": {
